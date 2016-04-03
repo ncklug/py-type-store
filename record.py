@@ -1,6 +1,7 @@
 
 import builtins
 import contextlib
+import inspect
 import os
 import sys
 import traceback
@@ -22,6 +23,15 @@ def _fullname(o):
     return module + "." + o.__class__.__name__
 
 
+# TODO(nathan): Implement non-Anonymous functions, probably by using
+# gc.get_referrers to check if the function is bound.
+def _get_function(frame):
+    return models.AnonymousFunction(
+        name=frame.f_code.co_name,
+        file_name=frame.f_code.co_filename,
+        lineno=frame.f_code.co_firstlineno)
+
+
 class _Tracer(object):
 
     def __init__(self, include_dir):
@@ -36,7 +46,7 @@ class _Tracer(object):
 
         if event == 'return':
             ret = models.Return(
-                function_name=frame.f_code.co_name,
+                function=_get_function(frame),
                 type_name=_fullname(arg))
             session = models.get_session()
             session.add(ret)
@@ -46,15 +56,16 @@ class _Tracer(object):
 
             args = []
             for arg_key in frame.f_code.co_varnames:
+                if arg_key not in frame.f_locals:
+                    # TODO(nathan): This should never happen, but does. Why?
+                    continue
                 arg_value = frame.f_locals[arg_key]
                 args.append(models.Arg(
-                    function_name=frame.f_code.co_name,
+                    function=_get_function(frame),
                     arg_name=arg_key,
                     type_name=_fullname(arg_value)))
             session.add_all(args)
             session.flush()
-        if event == 'line':
-            pass
         return self.trace
 
 
